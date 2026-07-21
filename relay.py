@@ -1,76 +1,75 @@
-import asyncio
-import os
+import socket
+import threading
+import sys
 
-BACKEND_HOST = "127.0.0.1"
-BACKEND_PORT = 22
-LISTEN_PORT = int(os.environ.get("PORT", 8080))
+# Cloud Run থেকে আপনার VPS-এ ট্রাফিক ফরওয়ার্ড করার কনফিগারেশন
+VPS_IP = "130.94.101.19"
+VPS_PORT = 8080
 
-
-async def pipe(reader, writer):
+def handle_client(client_socket):
     try:
-        while True:
-            data = await reader.read(4096)
-            if not data:
-                break
-            writer.write(data)
-            await writer.drain()
-    except Exception:
-        pass
-    finally:
-        writer.close()
-
-
-async def handle_client(client_reader, client_writer):
-    try:
-        # Read the initial HTTP request headers (until blank line)
-        header_data = b""
-        while b"\r\n\r\n" not in header_data and len(header_data) < 8192:
-            chunk = await client_reader.read(1)
-            if not chunk:
-                client_writer.close()
-                return
-            header_data += chunk
-
-        # We don't validate Sec-WebSocket-Key/Version here on purpose -
-        # many mobile SSH tunnel clients send a minimal custom payload
-        # that only includes "Upgrade: websocket". As long as that
-        # header is present, we accept and switch to raw relay mode.
-        if b"upgrade" in header_data.lower() and b"websocket" in header_data.lower():
-            response = (
+        # ক্লায়েন্ট থেকে প্রথম রিকোয়েস্ট (HTTP Upgrade payload) রিড করা
+        request = client_socket.recv(4096)
+        if not request:
+            client_socket.close()
+            return
+        
+        # HTTP Custom / Injector এর WebSocket রিকোয়েস্ট হ্যান্ডশেক রেসপন্স
+        if b"Upgrade: websocket" in request or b"upgrade: websocket" in request:
+            handshake = (
                 b"HTTP/1.1 101 Switching Protocols\r\n"
                 b"Upgrade: websocket\r\n"
-                b"Connection: Upgrade\r\n"
-                b"\r\n"
+                b"Connection: Upgrade\r\n\r\n"
             )
-            client_writer.write(response)
-            await client_writer.drain()
+            client_socket.sendall(handshake)
         else:
-            client_writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-            await client_writer.drain()
-            client_writer.close()
-            return
+            # যদি সাধারণ HTTP রিকোয়েস্ট হয়, তবে সেটিই পাস করে দেওয়া
+            pass
 
-        # Connect to the real SSH backend
-        backend_reader, backend_writer = await asyncio.open_connection(
-            BACKEND_HOST, BACKEND_PORT
-        )
-
-        await asyncio.gather(
-            pipe(client_reader, backend_writer),
-            pipe(backend_reader, client_writer),
-        )
+        # আপনার মূল VPS সার্ভারের সাথে কানেক্ট করা
+        vps_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        vps_socket.connect((VPS_IP, VPS_PORT))
     except Exception as e:
-        print(f"Connection error: {e}")
-    finally:
-        client_writer.close()
+        client_socket.close()
+        return
 
+    # টু-ওয়ে (Two-way) ট্রাফিক ফরওয়ার্ডিং লজিক
+    def forward(source, destination):
+        try:
+            while True:
+                data = source.recv(4096)
+                if not data:
+                    break
+                destination.sendall(data)
+        except:
+            pass
+        finally:
+            source.close()
+            destination.close()
 
-async def main():
-    server = await asyncio.start_server(handle_client, "0.0.0.0", LISTEN_PORT)
-    print(f"Relay listening on 0.0.0.0:{LISTEN_PORT} -> {BACKEND_HOST}:{BACKEND_PORT}")
-    async with server:
-        await server.serve_forever()
+    # দুটি আলাদা থ্রেডে ডেটা আদান-প্রদান শুরু
+    threading.Thread(target=forward, args=(client_socket, vps_socket), daemon=True).start()
+    threading.Thread(target=forward, args=(vps_socket, client_socket), daemon=True).start()
 
+def main():
+    # Cloud Run ডিফল্ট $PORT এনভায়রনমেন্ট ভেরিয়েবল লিসেন করবে
+    import os
+    port = int(os.environ.get("PORT", 8080))
+    
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("0.0.0.0", port))
+    server.listen(200)
+    print(f"Cloud Run Relay started on port {port}...")
+
+    while True:
+        try:
+            client_sock, _ = server.accept()
+            threading.Thread(target=handle_client, args=(client_sock,), daemon=True).start()
+        except KeyboardInterrupt:
+            break
+        except:
+            pass
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
