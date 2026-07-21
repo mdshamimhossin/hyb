@@ -1,5 +1,6 @@
 FROM alpine:latest
 
+# আপনার আগের সমস্ত প্যাকেজ এবং SSH কনফিগারেশন একদম ঠিক রাখা হয়েছে
 RUN apk update && apk add --no-cache python3 openssh shadow && \
     adduser -D -s /bin/sh alex && \
     ( echo 'alex:alex' | chpasswd ) && \
@@ -18,13 +19,7 @@ COPY relay.py /relay.py
 
 EXPOSE 8080
 
-# এখানে python3 relay.py সরাসরি ক্লাউড রানের $PORT (8080) এ লিসেন করবে
-# এবং আপনার অ্যাপের পাঠানো 'Upgrade: websocket' রিকোয়েস্ট রিসিভ করে লোকাল SSH পোর্টে (22) পাঠিয়ে দিবে।
+# আপনার মডিফাইড relay.py স্ক্রিপ্টটি রান করা হবে যা সরাসরি VPS (130.94.101.19)-এ ট্রাফিক পাঠাবে
 CMD sh -c '( cd /etc/ssh && ssh-keygen -A ) ; \
-    echo "=== sshd config test ===" ; \
-    /usr/sbin/sshd -t -f /etc/ssh/sshd_config ; \
-    echo "=== starting sshd on local port 22 ===" ; \
     /usr/sbin/sshd -f /etc/ssh/sshd_config ; \
-    echo "sshd exit code: $?" ; \
-    echo "=== starting python websocket relay on PORT $PORT ===" ; \
     exec python3 /relay.py'
