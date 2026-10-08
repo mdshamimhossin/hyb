@@ -16,9 +16,9 @@
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "ws",
+        "network": "httpupgrade",
         "security": "none",
-        "wsSettings": {
+        "httpupgradeSettings": {
           "path": "/ws"
         }
       }
