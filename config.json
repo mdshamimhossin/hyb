@@ -1,23 +1,32 @@
 {
-  "log": { "loglevel": "warning" },
+  "log": {
+    "loglevel": "warning"
+  },
   "inbounds": [
     {
       "listen": "0.0.0.0",
       "port": 8080,
       "protocol": "vless",
       "settings": {
-        "clients": [{ "id": "f3415cce-31f0-4d3a-be8e-b12c59eed425" }],
+        "clients": [
+          {
+            "id": "f3415cce-31f0-4d3a-be8e-b12c59eed425"
+          }
+        ],
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "xhttp",
+        "network": "ws",
         "security": "none",
-        "xhttpSettings": {
-          "path": "/xhttp",
-          "mode": "auto"
+        "wsSettings": {
+          "path": "/ws"
         }
       }
     }
   ],
-  "outbounds": [{ "protocol": "freedom" }]
+  "outbounds": [
+    {
+      "protocol": "freedom"
+    }
+  ]
 }
